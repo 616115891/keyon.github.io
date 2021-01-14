@@ -71,6 +71,51 @@
       <div class="outer">
         <section id="main">
   
+    <article id="post-swift-Lazy分析" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/keyon.github.io/2021/01/14/swift-Lazy%E5%88%86%E6%9E%90/" class="article-date">
+  <time class="dt-published" datetime="2021-01-14T09:51:51.000Z" itemprop="datePublished">2021-01-14</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="p-name article-title" href="/keyon.github.io/2021/01/14/swift-Lazy%E5%88%86%E6%9E%90/">Swift Lazy分析</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <p>今天我们一起来分析下 swift 的 lazy 是怎么样的<br>oc 的 lazy 大家都知道是走的 get 方法,然后发现实例对象是 nil,那咱们机会去创建一个新的给实例对象,代码就不赘述<br>接下来我先贴一段 swift 的 lazy 代码</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line">class classA &#123;</span><br><span class="line">    lazy var label: UILabel? = &#123;</span><br><span class="line">       <span class="built_in">let</span> label = UILabel()</span><br><span class="line">        <span class="built_in">return</span> label</span><br><span class="line">    &#125;()</span><br><span class="line"></span><br><span class="line">    func <span class="function"><span class="title">test</span></span>() &#123;</span><br><span class="line">        self.label?.text = <span class="string">&quot;11111&quot;</span></span><br><span class="line">        debugPrint(self.label?.text)</span><br><span class="line">        self.label = nil</span><br><span class="line">        debugPrint(self.label?.text)</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>大家应该都能猜到打印是什么情况,我直接贴打印结果</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Optional(<span class="string">&quot;11111&quot;</span>)</span><br><span class="line">nil</span><br></pre></td></tr></table></figure>
+<p>然后为什么会区别这么大呢和 oc 里面的,让我们看看源码把,其实稍微看下还是挺简单的</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br></pre></td><td class="code"><pre><span class="line">template &lt;typename T&gt; inline T &amp;Lazy&lt;T&gt;::get(void (*initCallback)(void*)) &#123;</span><br><span class="line">  static_assert(std::is_literal_type&lt;Lazy&lt;T&gt;&gt;::value,</span><br><span class="line">                <span class="string">&quot;Lazy&lt;T&gt; must be a literal type&quot;</span>);</span><br><span class="line"></span><br><span class="line">  SWIFT_ONCE_F(OnceToken, initCallback, &amp;Value);</span><br><span class="line">  <span class="built_in">return</span> unsafeGetAlreadyInitialized();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line">template &lt;typename T&gt;</span><br><span class="line">template &lt;typename Arg1&gt; inline T &amp;Lazy&lt;T&gt;::getWithInit(Arg1 &amp;&amp;arg1) &#123;</span><br><span class="line">  struct Data &#123;</span><br><span class="line">    void *address;</span><br><span class="line">    Arg1 &amp;&amp;arg1;</span><br><span class="line"></span><br><span class="line">    static void init(void *context) &#123;</span><br><span class="line">      Data *data = static_cast&lt;Data *&gt;(context);</span><br><span class="line">      ::new (data-&gt;address) T(static_cast&lt;Arg1&amp;&amp;&gt;(data-&gt;arg1));</span><br><span class="line">    &#125;</span><br><span class="line">  &#125; data&#123;&amp;Value, static_cast&lt;Arg1&amp;&amp;&gt;(arg1)&#125;;</span><br><span class="line"></span><br><span class="line">  SWIFT_ONCE_F(OnceToken, &amp;Data::init, &amp;data);</span><br><span class="line">  <span class="built_in">return</span> unsafeGetAlreadyInitialized();</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>从这代码里我们不难看出,这里 lazy 的用法其实就是在执行 get 方法发时候才会去实例化或者执行对应函数,然后细心的同学应该发现了,有个 onceToken,所以只会执行一次,所以 lazy 的对象置为 nil 之后就再也不会被赋值了</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2021/01/14/swift-Lazy%E5%88%86%E6%9E%90/" data-id="ckjwouu8v00016wkj6ueoh01z" data-title="Swift Lazy分析" class="article-share-link">Share</a>
+      
+      
+      
+    </footer>
+  </div>
+  
+</article>
+
+
+
+  
     <article id="post-swify_array" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
   <div class="article-meta">
     <a href="/keyon.github.io/2021/01/13/swify_array/" class="article-date">
@@ -113,7 +158,7 @@
       
     </div>
     <footer class="article-footer">
-      <a data-url="http://example.com/2021/01/13/swify_array/" data-id="ckjv69wn00000wykjhso79be8" data-title="swift的Array中ArraySlice的源码解析" class="article-share-link">Share</a>
+      <a data-url="http://example.com/2021/01/13/swify_array/" data-id="ckjwouu8z00026wkjft3f2z4j" data-title="swift的Array中ArraySlice的源码解析" class="article-share-link">Share</a>
       
       
       
@@ -160,7 +205,7 @@
       
     </div>
     <footer class="article-footer">
-      <a data-url="http://example.com/2021/01/13/hello-world/" data-id="ckjv69wn80001wykjaftbb80t" data-title="Hello World" class="article-share-link">Share</a>
+      <a data-url="http://example.com/2021/01/13/hello-world/" data-id="ckjwouu8r00006wkjgtbq0f4p" data-title="Hello World" class="article-share-link">Share</a>
       
       
       
@@ -201,6 +246,10 @@
     <h3 class="widget-title">Recent Posts</h3>
     <div class="widget">
       <ul>
+        
+          <li>
+            <a href="/keyon.github.io/2021/01/14/swift-Lazy%E5%88%86%E6%9E%90/">Swift Lazy分析</a>
+          </li>
         
           <li>
             <a href="/keyon.github.io/2021/01/13/swify_array/">swift的Array中ArraySlice的源码解析</a>
