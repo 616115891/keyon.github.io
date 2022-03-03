@@ -94,7 +94,7 @@
     <div class="e-content article-entry" itemprop="articleBody">
       
         <hr>
-<p>运行环境为 Xcode13.2.1 模拟机为 iPhone13 15.2<br>最近项目中遇到一个问题,富文本的属性加上了 baselineOffset,在这样的情况下调用 boundingRectWithSize 计算富文本高度的时,options 加上.usesFontLeading 计算出的高度不对。后面我就在想以前都是这么写,咋最近出问题了，后面我专门研究了下 NSStringDrawingOptions 的属性解释,下面重点说下经常用的两个</p>
+<p>运行环境为 Xcode13.2.1 模拟机为 iPhone13 15.2<br>最近项目中遇到一个问题,富文本的属性加上了 baselineOffset,在这样的情况下调用 boundingRectWithSize 计算富文本高度的时候,options 加上.usesFontLeading 计算出的高度不对。后面我就在想以前都是这么写,咋最近出问题了，后面我专门研究了下 NSStringDrawingOptions 的属性解释,下面重点说下经常用的两个</p>
 <figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">NSStringDrawingUsesLineFragmentOrigin //整个文本将以每行组成的矩形为单位计算整个文本的尺寸</span><br><span class="line">NSStringDrawingUsesFontLeading //以字体间的行距（leading，行距：从一行文字的底部到另一行文字底部的间距。）来计算。</span><br></pre></td></tr></table></figure>
 <p>在组合使用的时候源码不知道的情况下我只能猜加上 NSStringDrawingUsesFontLeading 会怎么计算,后面我发现了一定的规律</p>
 <p>如下面代码</p>
