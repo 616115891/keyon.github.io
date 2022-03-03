@@ -116,6 +116,51 @@
 
 
   
+    <article id="post-boundingRectWithSize" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/keyon.github.io/2021/01/14/boundingRectWithSize/" class="article-date">
+  <time class="dt-published" datetime="2021-01-14T09:51:51.000Z" itemprop="datePublished">2021-01-14</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 itemprop="name">
+      <a class="p-name article-title" href="/keyon.github.io/2021/01/14/boundingRectWithSize/">boundingRectWithSize函数分析</a>
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <hr>
+<p>运行环境为 Xcode13.2.1 模拟机为 iPhone13 15.2<br>最近项目中遇到一个问题,富文本的属性加上了 baselineOffset,在这样的情况下调用 boundingRectWithSize 计算富文本高度的时,options 加上.usesFontLeading 计算出的高度不对。后面我就在想以前都是这么写,咋最近出问题了，后面我专门研究了下 NSStringDrawingOptions 的属性解释,下面重点说下经常用的两个</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">NSStringDrawingUsesLineFragmentOrigin //整个文本将以每行组成的矩形为单位计算整个文本的尺寸</span><br><span class="line">NSStringDrawingUsesFontLeading //以字体间的行距（leading，行距：从一行文字的底部到另一行文字底部的间距。）来计算。</span><br></pre></td></tr></table></figure>
+<p>在组合使用的时候源码不知道的情况下我只能猜加上 NSStringDrawingUsesFontLeading 会怎么计算,后面我发现了一定的规律</p>
+<p>如下面代码</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="built_in">let</span> font = UIFont.systemFont(ofSize: 14)</span><br><span class="line"><span class="built_in">let</span> baselineOffset = 0</span><br><span class="line"><span class="built_in">let</span> style = NSMutableParagraphStyle()</span><br><span class="line">style.maximumLineHeight = 20</span><br><span class="line">style.minimumLineHeight = 20</span><br><span class="line">style.lineBreakMode = .byCharWrapping</span><br><span class="line"><span class="built_in">let</span> defaultAttributes: [NSAttributedString.Key: Any] = [</span><br><span class="line">    .baselineOffset: baselineOffset,</span><br><span class="line">    .font: font,</span><br><span class="line">    .paragraphStyle: style,</span><br><span class="line">]</span><br><span class="line"><span class="built_in">let</span> part = NSMutableAttributedString(string: <span class="string">&quot;Lorem ipsum\n&quot;</span>, attributes: defaultAttributes)</span><br><span class="line"><span class="built_in">let</span> string = NSMutableAttributedString()</span><br><span class="line">string.append(part)</span><br><span class="line">string.append(part)</span><br><span class="line">string.append(part)</span><br><span class="line">// Remove last newline</span><br><span class="line">string.replaceCharacters(<span class="keyword">in</span>: NSRange(location: string.length-1, length: 1), with: <span class="string">&quot;&quot;</span>)</span><br><span class="line"><span class="built_in">let</span> size = string.boundingRect(with: CGSize(width: 400, height: CGFloat(MAXFLOAT)), options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil).size</span><br><span class="line"><span class="built_in">print</span>(size.height, font.lineHeight)</span><br><span class="line"><span class="built_in">let</span> label = UILabel()</span><br><span class="line">label.frame = CGRect(x: 100, y: 100, width: size.width, height: size.height)</span><br><span class="line">label.backgroundColor = .white</span><br><span class="line">label.numberOfLines = 0</span><br><span class="line">label.attributedText = string</span><br><span class="line">view.addSubview(label)</span><br></pre></td></tr></table></figure>
+<p>特别说明一点字体自带行高是 16.7<br>从代码中我可以看到我们设置行高是 20,接下来看一组有意思的数据<br>| baselineOffset | 计算所得高度 |<br>| —- | —- |<br>| 0 | 60 |<br>| 1 | 57 |<br>| 2 | 54 |<br>| 3 | 51 |<br>| 3.3 | 50.09 |<br>| 4 | 49.86 |<br>| 5 | 49.86 |<br>因为我这个字符串是 3 行，发现基线改变之后高度都是偏移量乘以行数的减少,但到了 4 和 5 的时候就没有再改变是因为什么呢？<br>我发现 49.86/3=16.62，非常接近我们的字体自带行高,于是我就把我们设置的行高 20 减去字体自身的行高等于 3.3,然后计算出结果为 50.09 是无限接近于字体自身行高乘以行高的数值的,所以我在这里得出的结论就是如果多行的情况下用.usesFontLeading 这个属性他就会拿行高去计算,最小值为字体自身行高,最大值是我们设置的行高,如果发生基线偏移,会相对应的从我们设置的行高中减去对应数值</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2021/01/14/boundingRectWithSize/" data-id="cl0aii9os00004dkj55cl7dr9" data-title="boundingRectWithSize函数分析" class="article-share-link">Share</a>
+      
+      
+      
+    </footer>
+  </div>
+  
+</article>
+
+
+
+  
     <article id="post-swify_array" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
   <div class="article-meta">
     <a href="/keyon.github.io/2021/01/13/swify_array/" class="article-date">
@@ -252,6 +297,10 @@
           </li>
         
           <li>
+            <a href="/keyon.github.io/2021/01/14/boundingRectWithSize/">boundingRectWithSize函数分析</a>
+          </li>
+        
+          <li>
             <a href="/keyon.github.io/2021/01/13/swify_array/">swift的Array中ArraySlice的源码解析</a>
           </li>
         
@@ -272,7 +321,7 @@
   <div class="outer">
     <div id="footer-info" class="inner">
       
-      &copy; 2021 Keyon<br>
+      &copy; 2022 Keyon<br>
       Powered by <a href="https://hexo.io/" target="_blank">Hexo</a>
     </div>
   </div>
